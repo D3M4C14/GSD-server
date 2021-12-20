@@ -29,7 +29,7 @@ int main( int argc, char* argv[] )
 
     const char* file_name = argv[1];
     ret = get_launch_cfg( file_name, &server_cfg );
-    if( ret < 0 )
+    if( ret != 0 )
     {
         printf( "load launch_config_file:'%s' error\n", file_name );
         return 1;
@@ -51,7 +51,7 @@ int main( int argc, char* argv[] )
         return 1;
     }
 
-    ret = work_init( &server_cfg );
+    ret = work_init(sock, &server_cfg );
     if( ret == -1 )
     {
         perror( "listen init error" );

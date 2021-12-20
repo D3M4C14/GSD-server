@@ -149,7 +149,11 @@ int parse_line( launch_cfg_t* cfg, const char* line )
 			break;
 		}
 	}
-	if( ke == 0 || ke > KEY_MAX_LEN-1 )return -2;
+	if( ke == 0 || ke > KEY_MAX_LEN-1 )
+	{
+		printf("key length is zero or too long\n");
+		return -2;
+	}
 
 	memset( key, '\0', KEY_MAX_LEN);
 	for (int i = 0; i < ke; ++i)
@@ -167,23 +171,24 @@ int parse_line( launch_cfg_t* cfg, const char* line )
 			break;
 		}
 	}
-	if( line[vs] == '\0' )return -3;
+	if( line[vs] == '\0' )
+	{
+		printf("value length is zero\n");
+		return -3;
+	}
 
 	memset( value, '\0', VALUE_MAX_LEN);
 	for (int li = vs, vi=0; li < vs+VALUE_MAX_LEN-1; ++li,++vi)
 	{
 		value[vi] = line[li];
-		if ( value[vi] == '\0' )
+		if ( value[vi] == '\0' || li == vs+VALUE_MAX_LEN-2 )
 		{
-			if ( line[li+1] == '\0' )
-			{
-				break;
-			}
-			else
+			if ( line[li+1] != '\0' )
 			{// 数据没读完
+				printf("value length too long\n");
 				return -4;
 			}
-			
+			break;
 		}
 	}
 
@@ -240,7 +245,7 @@ else if( strcmp( #KEY, key ) == 0 )\
 
 int parse_key_value( launch_cfg_t* cfg, const char* key, const char* value )
 {
-	printf( "'%s':'%s'\n",key, value );
+	// printf( "'%s':'%s'\n",key, value );
 	if( strcmp( "#", key ) == 0 )
 	{}
 	PIKV(prot)
@@ -254,7 +259,7 @@ int parse_key_value( launch_cfg_t* cfg, const char* key, const char* value )
 	{
 		printf( "the key : '%s' is not define\n", key );
 	}
-	
+
 	return 0;
 }
 

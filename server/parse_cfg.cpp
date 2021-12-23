@@ -112,7 +112,8 @@ void set_default_value( launch_cfg_t* cfg )
 {
 	cfg->recv_buffer_size = DEFAULT_RECV_BUFFER_SIZE;
 	cfg->send_buffer_size = DEFAULT_SEND_BUFFER_SIZE;
-
+	cfg->backlog = DEFAULT_BACKLOG;
+	
 	memset( cfg->log_file, '\0', VALUE_MAX_LEN );
 
 	unsigned cpu_num = sysconf( _SC_NPROCESSORS_ONLN );
@@ -255,6 +256,7 @@ int parse_key_value( launch_cfg_t* cfg, const char* key, const char* value )
 	PIKV(work_buffer_size)
 	PIKV(recv_buffer_size)
 	PIKV(send_buffer_size)
+	PIKV(backlog)
 	else
 	{
 		printf( "the key : '%s' is not define\n", key );
@@ -264,7 +266,7 @@ int parse_key_value( launch_cfg_t* cfg, const char* key, const char* value )
 }
 
 
-int print_launch_cfg_info( launch_cfg_t* cfg )
+int print_launch_cfg_info( launch_cfg_t * const cfg )
 {
 	printf("\n===========================launch_config========================\n");
 
@@ -275,6 +277,7 @@ int print_launch_cfg_info( launch_cfg_t* cfg )
 	printf( "work_buffer_size : %d\n", cfg->work_buffer_size );
 	printf( "recv_buffer_size : %d\n", cfg->recv_buffer_size );
 	printf( "send_buffer_size : %d\n", cfg->send_buffer_size );
+	printf( "backlog : %d\n", cfg->backlog );
 
 	printf("===========================launch_config========================\n\n");
 

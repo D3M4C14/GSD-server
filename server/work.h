@@ -1,20 +1,11 @@
-#ifndef THREAD_POOL_H
-#define THREAD_POOL_H
+#ifndef WORK_H
+#define WORK_H
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <pthread.h>
-#include <assert.h>
-#include <stdio.h>
-#include <unistd.h>
 #include "parse_cfg.h"
 
+int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pthread_barrier_t * const barr );
 
-int work_init( launch_cfg_t* cfg );
-
-int append_work( int num);
+int append_work( int num );
 
 
 #endif

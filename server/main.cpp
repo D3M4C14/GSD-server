@@ -124,6 +124,8 @@ void clear_threads( const int thread_num )
 
     pthread_barrier_destroy( &work_barrier );
 
+    clear_work();
+
     printf("server stop");
 }
 
@@ -157,7 +159,7 @@ int log_init( launch_cfg_t * const cfg )
 static void * signal_thread( void * arg )
 {
     sigset_t *sigset = (sigset_t *) arg;
-    int ret,sig;
+    int sig;
 
     while( server_state == 0 )
     {

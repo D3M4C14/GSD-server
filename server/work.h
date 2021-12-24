@@ -7,5 +7,6 @@ int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pth
 
 int append_work( int num );
 
+void clear_work();
 
 #endif

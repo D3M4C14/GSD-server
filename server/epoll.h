@@ -18,25 +18,25 @@ struct event {
 	bool eof;
 };
 
-static bool ep_invalid( int efd ) 
-{
-	return efd == -1;
-}
+// static bool ep_invalid( int efd ) 
+// {
+// 	return efd == -1;
+// }
 
 static int ep_create() 
 {
 	return epoll_create( 1024 );
 }
 
-static void ep_release( int efd ) 
-{
-	close( efd );
-}
+// static void ep_release( int efd ) 
+// {
+// 	close( efd );
+// }
 
 static int ep_add( int efd, int fd, void *ud ) 
 {
 	struct epoll_event ev;
-	ev.events = EPOLLIN;
+	ev.events = EPOLLIN | EPOLLET;
 	ev.data.ptr = ud;
 	return epoll_ctl( efd, EPOLL_CTL_ADD, fd, &ev );
 }
@@ -46,13 +46,13 @@ static void ep_del( int efd, int fd )
 	epoll_ctl( efd, EPOLL_CTL_DEL, fd , nullptr );
 }
 
-static void ep_write( int efd, int fd, void *ud, bool enable )
-{
-	struct epoll_event ev;
-	ev.events = EPOLLIN | (enable ? EPOLLOUT : 0);
-	ev.data.ptr = ud;
-	epoll_ctl(efd, EPOLL_CTL_MOD, fd, &ev);
-}
+// static void ep_write( int efd, int fd, void *ud, bool enable )
+// {
+// 	struct epoll_event ev;
+// 	ev.events = EPOLLIN | (enable ? EPOLLOUT : 0);
+// 	ev.data.ptr = ud;
+// 	epoll_ctl(efd, EPOLL_CTL_MOD, fd, &ev);
+// }
 
 static int ep_wait( int efd, struct event *e, int en, int t = -1 )
 {

@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -282,6 +283,10 @@ static void* work_func( void* no )
 
     struct epoll_event evs[ MAX_EVENT_NUMBER ];
     int work_num,work_fd,evn,msg_len;
+    
+    uint64_t dt = 200000;
+    uint64_t lt=0,ct=0;
+    struct timeval tv;
 
     while( true )
     {
@@ -345,8 +350,11 @@ static void* work_func( void* no )
             }
         }
 
+        gettimeofday( &tv, nullptr );
+        ct = tv.tv_sec*1000000 + tv.tv_usec;
+
         // 消息队列分发给所有连接
-        // if( timeok )
+        if( ct - lt > dt )
         {
             if( mq.begin_pos != mq.end_pos )
             {
@@ -365,6 +373,9 @@ static void* work_func( void* no )
                 mq.begin_pos = mq.end_pos;
             }
 
+            gettimeofday( &tv, nullptr );
+            ct = tv.tv_sec*1000000 + tv.tv_usec;
+            lt = ct;
         }
 
     }

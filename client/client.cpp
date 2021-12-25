@@ -3,10 +3,36 @@
 #include <assert.h>
 #include <stdio.h>
 #include <iostream>
+#include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+
+int sock;
+bool run = true;
+
+void* thread_func( void* arg )
+{
+    const int bsz = 4096;
+    char buffer[ bsz ];
+    int len;
+    while( run )
+    {
+        memset( buffer, '\0', bsz );
+        len = recv( sock, buffer, bsz, MSG_DONTWAIT );
+        if ( len > 0 )
+        {
+            printf( "reccv msg : %s\n",buffer );
+        }
+        else
+        {
+            usleep(100000);
+        }
+    }
+
+    return nullptr;
+}
 
 int main( int argc, char* argv[] )
 {
@@ -21,7 +47,7 @@ int main( int argc, char* argv[] )
     
     printf( "* runing %s : %s:%d \n", basename(argv[0]), ip, port );
 
-    int sock = socket( PF_INET, SOCK_STREAM, 0 );
+    sock = socket( PF_INET, SOCK_STREAM, 0 );
     assert( sock >= 0 );
     
     // 设置在线接收带外数据
@@ -29,7 +55,7 @@ int main( int argc, char* argv[] )
     setsockopt( sock, SOL_SOCKET, SO_OOBINLINE, &on, sizeof(on) );
 
     // 设置写缓冲区大小
-    int sbsz = 32;
+    int sbsz = 64;
     int slen = sizeof(sbsz);
     setsockopt( sock, SOL_SOCKET, SO_SNDBUF, &sbsz, sizeof(sbsz) );
     getsockopt( sock, SOL_SOCKET, SO_SNDBUF, &sbsz, (socklen_t*)&slen );
@@ -56,70 +82,36 @@ int main( int argc, char* argv[] )
         return 1;
     }
     
+    pthread_t tid;
+    int ret = pthread_create( &tid, nullptr, thread_func, nullptr );
+    if( ret != 0 )
+    {
+        perror( "pthread_create" );
+        return 1;
+    }
+
     const int bsz = 4096;
     char buffer[ bsz ];
-    while( true )
+    while( run )
     {
-
         printf( "-input msg...\n" );
         std::cin >> buffer;
         printf( "\n" );
 
         int len = strlen( buffer );
-        if(len>=1 && buffer[0]=='O' )
-        {
-            send( sock, buffer, len, MSG_OOB );
-        }
-        else if( len>=1 && buffer[0]=='D' )
-        {
-            // 第二个紧急数据会覆盖第一个(一个TCP包只有一个紧急指针)
-            send( sock, buffer, len, MSG_OOB );
-            char obd[] = "OOB";
-            send( sock, obd, 3, MSG_OOB );
-        }
-        else if(len>=1 && buffer[0]=='B' )
-        {
-            send( sock, buffer, len, MSG_OOB );
-            char obd[] = "OOB";
-            send( sock, obd, 3, 0 );
-        }
-        else
+
+        if( len >= 0 )
         {
             send( sock, buffer, len, 0);
         }
 
-        if(strcmp(buffer,"quit")==0)break;
-
-        usleep(100000);
-
-        for (int i = 0; i < 10; ++i)
-        {
-            int ret = sockatmark(sock);
-            if(ret==1)
-            {
-                printf( "at OOB mark\n" );
-            }
-            else if(ret==-1)
-            {
-                perror( "sockatmark" );
-            }
-
-            memset( buffer, '\0', bsz );
-            len = recv( sock, buffer, bsz, MSG_DONTWAIT );
-            if(len>0)
-            {
-                printf( "from server msg: '%s'\n", buffer );
-            }
-            else
-            {
-                break;
-            }
-            usleep(10000);
-        }
+        if( strcmp(buffer,"quit") == 0 ) run = false;
 
     }
 
     close(sock);
+
+    pthread_join( tid, nullptr );
 
     return 0;
 }

@@ -290,14 +290,14 @@ int listen_init( launch_cfg_t * const cfg )
         return -1;
     }
 
-    ret = ep_add( efd, listen_sock, nullptr );
+    ret = ep_add( efd, listen_sock );
     if ( ret != 0 )
     {
         perror( "ep_add" );
         return -1;
     }
 
-    struct event evs[ MAX_EVENT_NUMBER ];
+    struct epoll_event evs[ MAX_EVENT_NUMBER ];
     
     pthread_barrier_wait( &work_barrier );
 

@@ -10,14 +10,6 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 
-struct event {
-	void * ud;
-	bool read;
-	bool write;
-	bool error;
-	bool eof;
-};
-
 // static bool ep_invalid( int efd ) 
 // {
 // 	return efd == -1;
@@ -33,11 +25,11 @@ static int ep_create()
 // 	close( efd );
 // }
 
-static int ep_add( int efd, int fd, void *ud ) 
+static int ep_add( int efd, int fd ) 
 {
 	struct epoll_event ev;
 	ev.events = EPOLLIN | EPOLLET;
-	ev.data.ptr = ud;
+	ev.data.fd = fd;
 	return epoll_ctl( efd, EPOLL_CTL_ADD, fd, &ev );
 }
 
@@ -54,21 +46,12 @@ static void ep_del( int efd, int fd )
 // 	epoll_ctl(efd, EPOLL_CTL_MOD, fd, &ev);
 // }
 
-static int ep_wait( int efd, struct event *e, int en, int t = -1 )
+// 先不考虑平台移植问题 直接用原生的epoll_event结构
+static int ep_wait( int efd, struct epoll_event *e, int en, int t = -1 )
 {
-	struct epoll_event ev[en];
-	int n = epoll_wait( efd, ev, en, t );
-	
-	for (int i = 0; i < n; ++i)
-	{
-		e[i].ud = ev[i].data.ptr;
-		unsigned flag = ev[i].events;
-		e[i].write = (flag & EPOLLOUT) != 0;
-		e[i].read = (flag & (EPOLLIN | EPOLLHUP)) != 0;
-		e[i].error = (flag & EPOLLERR) != 0;
-		e[i].eof = false;
-	}
 
+	int n = epoll_wait( efd, e, en, t );
+	
 	return n;
 }
 

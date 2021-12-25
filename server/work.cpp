@@ -12,7 +12,6 @@
 #include "parse_cfg.h"
 #include "epoll.h"
 
-
 using namespace std;
 
 typedef struct
@@ -20,6 +19,15 @@ typedef struct
     int idx;
     int size;
 }set_st;
+
+// 循环消息队列
+typedef struct
+{
+    char* data;
+    int size;
+    int begin_pos;
+    int end_pos;
+}cmq_t;
 
 #define MAX_EVENT_NUMBER 1024
 static bool work_inited = false;
@@ -31,9 +39,7 @@ static set_st* set_sortls;
 static int* epfds;
 
 
-static char** msg_datas;
-// static int* msg_begin_pos;
-// static int* msg_end_pos;
+static cmq_t* mqs;
 
 static pthread_barrier_t * work_barrier;
 
@@ -85,25 +91,26 @@ int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pth
         return -1;
     }
 
-    msg_datas = new (std::nothrow) char*[thread_num];
-    if ( msg_datas == nullptr )
+    mqs = new (std::nothrow) cmq_t[thread_num];
+    if ( mqs == nullptr )
     {
-        printf( "new memory error msg_datas char*[%d]\n", thread_num );
+        printf( "new memory error mqs cmq_t[%d]\n", thread_num );
         clear_work();
         return -1;
     }
-    bzero( msg_datas, sizeof(msg_datas) );
+    bzero( mqs, sizeof(mqs) );
 
     for (int i = 0; i < thread_num; ++i)
     {
-        msg_datas[i] = new (std::nothrow) char[ cfg->work_buffer_size ];
-        if ( msg_datas[i] == nullptr )
+        mqs[i].data = new (std::nothrow) char[ cfg->work_buffer_size ];
+        if ( mqs[i].data == nullptr )
         {
-            printf( "new memory error msg_datas char[%d]\n", cfg->work_buffer_size );
+            printf( "new memory error mqs.data[%d]\n", cfg->work_buffer_size );
             clear_work();
             return -1;
         }
-        bzero( msg_datas[i], sizeof(msg_datas[i]) );
+        mqs[i].size = cfg->work_buffer_size;
+        bzero( mqs[i].data, sizeof(mqs[i].data) );
 
         pip_fds[i] = new (std::nothrow) int[ 2 ];
         if ( pip_fds[i] == nullptr )
@@ -227,9 +234,9 @@ void clear_work()
 
     for (int i = 0; i < thread_num; ++i)
     {
-        if( msg_datas[i] )
+        if( mqs[i].data )
         {
-            delete [] msg_datas[i];
+            delete [] mqs[i].data;
         }
 
         if( pip_fds[i] )
@@ -246,11 +253,10 @@ void clear_work()
         }
     }
 
-    if( msg_datas ) delete [] msg_datas;
+    if( mqs ) delete [] mqs;
 
     if( pip_fds ) delete [] pip_fds;
 }
-
 
 static void* work_func( void* no )
 {
@@ -258,58 +264,83 @@ static void* work_func( void* no )
     
     pthread_barrier_wait( work_barrier );
 
-    char* msg_data = msg_datas[idx];
+    cmq_t mq = mqs[idx];
     set<int> fd_set = work_fd_sets[idx];
     int sock = *listen_sock;
     int efd = epfds[idx];
     int pip_fd=pip_fds[idx][0];
 
-    int ret = ep_add( efd, pip_fd, (void*)&pip_fd );
+    int ret = ep_add( efd, pip_fd );
     if ( ret != 0 )
     {
         perror( "pip_fd ep_add" );
         return (void*)-1;
     }
 
-
     struct sockaddr_in client;
     socklen_t clen = sizeof( client );
 
-    struct event evs[ MAX_EVENT_NUMBER ];
-    int work_num,work_fd,evn;
-    pair< set<int>::iterator, bool > set_ins;
+    struct epoll_event evs[ MAX_EVENT_NUMBER ];
+    int work_num,work_fd,evn,msg_len;
 
     while( true )
     {
         evn = ep_wait( efd, evs, MAX_EVENT_NUMBER, 100 );
         if ( evn > 0 )
-        {printf("zzzzzzzzzzaaa\n");
+        {
             for (int i = 0; i < evn; ++i)
             {
                 // 接受连接
-                if( evs[i].ud && *(int*)evs[i].ud == pip_fd )
+                if( evs[i].data.fd == pip_fd )
                 {
                     recv( pip_fd, (char*)&work_num, sizeof(work_num), 0);
-                    for (int wi = 0; i < work_num; ++wi)
+                    for (int wi = 0; wi < work_num; ++wi)
                     {
                         work_fd = accept( sock, (struct sockaddr*)&client, &clen );
-                        set_ins = fd_set.insert( work_fd );
-                        printf("aaaaaaa@ %d %d\n",work_fd,*set_ins.first);
-                        int ret = ep_add( efd, work_fd, (void*)&*set_ins.first );
-                        if ( ret != 0 )
+                        if ( work_fd > 0 )
                         {
-                            printf("work_fd(%d) ep_add error set size : %lu\n", idx, fd_set.size() );
-                            perror( "work_fd ep_add" );
-                            return (void*)-1;
+                            fd_set.insert( work_fd );
+                            int ret = ep_add( efd, work_fd );
+                            if ( ret != 0 )
+                            {
+                                printf("work_fd(%d) ep_add error set size : %lu\n", idx, fd_set.size() );
+                                perror( "work_fd ep_add" );
+                                return (void*)-1;
+                            }
                         }
                     }
                 }
                 else
-                {printf("zzzzzzzzzz\n");
+                {
                     // 连接发送消息到达
-                    work_fd = *(int*)evs[i].ud;
-                    recv( work_fd, msg_data, server_cfg->work_buffer_size, 0);
-                    printf( "msg:%s\n", msg_data );
+                    work_fd = evs[i].data.fd;
+
+                    while( true )
+                    {
+                        if( mq.end_pos == mq.size )
+                        {
+                            // 消息绕回头部
+                            mq.end_pos = 0;
+                        }
+
+                        msg_len = recv( work_fd, mq.data+mq.end_pos, mq.size-mq.end_pos, 0 );
+                        if( msg_len > 0 )
+                        {
+                            // 消息穿仓
+                            if( mq.end_pos < mq.begin_pos && mq.end_pos + msg_len > mq.begin_pos)
+                            {
+                                printf( "no.%d circle msg queue overload!!!\n", idx );
+                            }
+
+                            mq.end_pos += msg_len;
+
+                        }
+                        else
+                            break;
+
+                    }
+
+                    printf( "msg:%s\n", mq.data );
                 }
             }
         }
@@ -338,4 +369,6 @@ static void* work_func( void* no )
 
     }
 
+    printf( "thread over %d\n", idx );
+    return (void*)0;
 }

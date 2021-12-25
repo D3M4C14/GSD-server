@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include <unistd.h>
 #include <set>
 #include <algorithm>
@@ -304,10 +305,10 @@ static void* work_func( void* no )
                         work_fd = accept( sock, (struct sockaddr*)&client, &clen );
                         if ( work_fd > 0 )
                         {
-                            char remote[INET_ADDRSTRLEN];
-                            printf( "client connected : %s:%d\n"
-                                        ,inet_ntop( AF_INET, &client.sin_addr, remote, INET_ADDRSTRLEN )
-                                        ,ntohs( client.sin_port ) );
+                            // char remote[INET_ADDRSTRLEN];
+                            // printf( "client connected : %s:%d\n"
+                            //             ,inet_ntop( AF_INET, &client.sin_addr, remote, INET_ADDRSTRLEN )
+                            //             ,ntohs( client.sin_port ) );
 
                             fd_set.insert( work_fd );
                             int ret = ep_add( efd, work_fd );
@@ -332,10 +333,11 @@ static void* work_func( void* no )
                             // 消息绕回头部
                             mq.end_pos = 0;
                         }
-                        
+
                         printf( "end_pos:%d\n", mq.end_pos );
 
                         msg_len = recv( work_fd, mq.data+mq.end_pos, mq.size-mq.end_pos, MSG_DONTWAIT );
+
                         if( msg_len > 0 )
                         {
                             // 消息穿仓
@@ -347,9 +349,22 @@ static void* work_func( void* no )
                             mq.end_pos += msg_len;
 
                         }
-                        else
+                        else if ( msg_len == -1 )
+                        {
+                            if( errno != EAGAIN && errno != EWOULDBLOCK )
+                            {
+                                printf( "no.%d recv error(%d)\n", idx, errno );
+                                perror( "recv" );
+                            }
                             break;
-
+                        }
+                        else if ( msg_len == 0 )
+                        {
+                            fd_set.erase( work_fd );
+                            ep_del( efd, work_fd );
+                            printf("offline\n");
+                            break;
+                        }
                     }
 
                     printf( "msg:%s\n", mq.data );

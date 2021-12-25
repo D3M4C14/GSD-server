@@ -346,26 +346,26 @@ static void* work_func( void* no )
         }
 
         // 消息队列分发给所有连接
-
         // if( timeok )
-        // {
-        //     if (begin_pos!=end_pos)
-        //     {
-        //         for(it=fset.begin ();it!=fset.end ();it++)
-        //         {
-        //             if( begin_pos < end_pos )
-        //             {
-        //                 send(*it,msg_data,begin_pos,end_pos);
-        //             }
-        //             else
-        //             {
-        //                 send(*it,msg_data,begin_pos,max);
-        //                 send(*it,msg_data,0,end_pos);
-        //             }
-        //         }
-        //     }
+        {
+            if( mq.begin_pos != mq.end_pos )
+            {
+                for( auto it=fd_set.begin(); it!=fd_set.end(); it++ )
+                {
+                    if( mq.begin_pos < mq.end_pos )
+                    {
+                        send( *it, mq.data+mq.begin_pos, mq.end_pos-mq.begin_pos, 0);
+                    }
+                    else
+                    {
+                        send( *it, mq.data+mq.begin_pos, mq.size-mq.begin_pos, 0);
+                        send( *it, mq.data, mq.end_pos, 0);
+                    }
+                }
+                mq.begin_pos = mq.end_pos;
+            }
 
-        // }
+        }
 
     }
 

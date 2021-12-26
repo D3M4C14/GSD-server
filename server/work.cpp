@@ -409,7 +409,7 @@ static void* work_func( void* no )
                         }
                     }
 
-                    // printf( "no.%d msg:%s\n", idx, mq->data );
+                    // printf( "no.%d msg:'%s'\n", idx, mq->data );
                 }
             }
         }
@@ -512,8 +512,9 @@ static void* work_func( void* no )
 
                     // printf("no.%d tttt:%d s:%d my:%d\n",idx,t, mq->begin_pos,work_read_infos[idx][t] );
                 }
+                // printf("no.%d fd:%ld\n",t,work_fd_sets[t].size());
             }
-            
+
             gettimeofday( &tv, nullptr );
             ct = tv.tv_sec*1000000 + tv.tv_usec;
             lt = ct;

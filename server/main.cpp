@@ -307,6 +307,7 @@ int listen_init( launch_cfg_t * const cfg )
         evn = ep_wait( efd, evs, MAX_EVENT_NUMBER, 1000 );
         if ( evn > 0 )
         {
+            // printf( "append_work:%d\n", evn );
             append_work( evn );
         }
         sched_yield();

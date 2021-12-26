@@ -39,7 +39,7 @@ static pthread_t* thread_ids;
 static int** pip_fds;
 static set_st* set_sortls;
 static int* epfds;
-static int* work_read_posl;
+static int** work_read_infos;
 static cmq_t* mqs;
 static pthread_barrier_t * work_barrier;
 static int* listen_sock;
@@ -60,13 +60,13 @@ int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pth
 
 
     // 分配内存
-    work_read_posl = new (std::nothrow) int[ thread_num ];
-    if ( work_read_posl == nullptr )
+    work_read_infos = new (std::nothrow) int*[ thread_num ];
+    if ( work_read_infos == nullptr )
     {
-        printf( "new memory error work_read_posl int[%d]\n", thread_num );
+        printf( "new memory error work_read_infos int*[%d]\n", thread_num );
         return -1;
     }
-    bzero( work_read_posl, sizeof(work_read_posl) );
+    bzero( work_read_infos, sizeof(work_read_infos) );
 
     epfds = new (std::nothrow) int[ thread_num ];
     if ( epfds == nullptr )
@@ -108,6 +108,15 @@ int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pth
 
     for (int i = 0; i < thread_num; ++i)
     {
+        work_read_infos[i] = new (std::nothrow) int[ thread_num ];
+        if ( work_read_infos[i] == nullptr )
+        {
+            printf( "new memory error work_read_infos int[%d]\n", thread_num );
+            clear_work();
+            return -1;
+        }
+        bzero( work_read_infos[i], sizeof(work_read_infos[i]) );
+
         mqs[i].data = new (std::nothrow) char[ cfg->work_buffer_size ];
         if ( mqs[i].data == nullptr )
         {
@@ -168,6 +177,7 @@ int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pth
     return 0;
 }
 
+// 尽量抹平每个线程的连接数
 int append_work( int num )
 {
     if ( !work_inited )
@@ -183,8 +193,9 @@ int append_work( int num )
         set_sortls[i].size = fsz;
     }
 
-    std::sort( set_sortls, set_sortls+tsz-1, []( set_st a,set_st b ){return a.size < b.size;} );
+    std::sort( set_sortls, set_sortls+tsz, []( set_st& a,set_st& b ){return a.size < b.size;} );
 
+    // 补满与最大的差值
     int smax = set_sortls[tsz-1].size,ds;
     set_st* s;
     for (int i = 0; i < tsz; ++i)
@@ -226,17 +237,15 @@ int append_work( int num )
         {
             send( pip_fds[ s->idx ][1], (char*)&s->size, sizeof(s->size), 0 );
         }
-        
     }
 
     return 0;
 }
 
+
 void clear_work()
 {
     const int thread_num = server_cfg->work_thread_num;
-    
-    if( work_read_posl ) delete [] work_read_posl;
     
     if( work_fd_sets ) delete [] work_fd_sets;
 
@@ -245,6 +254,11 @@ void clear_work()
         if( mqs[i].data )
         {
             delete [] mqs[i].data;
+        }
+
+        if( work_read_infos[i] )
+        {
+            delete [] work_read_infos[i];
         }
 
         if( pip_fds[i] )
@@ -261,8 +275,8 @@ void clear_work()
         }
     }
 
+    if( work_read_infos ) delete [] work_read_infos;
     if( mqs ) delete [] mqs;
-
     if( pip_fds ) delete [] pip_fds;
 }
 
@@ -272,12 +286,12 @@ static void* work_func( void* no )
     
     pthread_barrier_wait( work_barrier );
 
-    cmq_t mq = mqs[idx];
-    set<int> fd_set = work_fd_sets[idx];
+    const int thread_num = server_cfg->work_thread_num;
+    cmq_t* mq;
+    set<int>* fd_set = work_fd_sets+idx;
     int sock = *listen_sock;
     int efd = epfds[idx];
-    int pip_fd=pip_fds[idx][0];
-    int wrp = work_read_posl[idx];
+    int pip_fd = pip_fds[idx][0];
 
     int ret = ep_add( efd, pip_fd );
     if ( ret != 0 )
@@ -290,19 +304,18 @@ static void* work_func( void* no )
     socklen_t clen = sizeof( client );
 
     struct epoll_event evs[ MAX_EVENT_NUMBER ];
-    int work_num,work_fd,evn,msg_len;
+    int work_num,work_fd,evn,msg_len,wrp;;
     
-    uint64_t dt = 200000;
+    uint64_t dt = 6000000;
     uint64_t lt=0,ct=0;
     struct timeval tv;
-
-    int ixx = 0;
 
     while( true )
     {
         evn = ep_wait( efd, evs, MAX_EVENT_NUMBER, 100 );
         if ( evn > 0 )
         {
+            mq = mqs+idx;
             for (int i = 0; i < evn; ++i)
             {
                 // 接受连接
@@ -314,16 +327,18 @@ static void* work_func( void* no )
                         work_fd = accept( sock, (struct sockaddr*)&client, &clen );
                         if ( work_fd > 0 )
                         {
-                            // char remote[INET_ADDRSTRLEN];
-                            // printf( "client connected : %s:%d\n"
-                            //             ,inet_ntop( AF_INET, &client.sin_addr, remote, INET_ADDRSTRLEN )
-                            //             ,ntohs( client.sin_port ) );
+                            char remote[INET_ADDRSTRLEN];
+                            printf( "no.%d client connected : %s:%d fd(%d)\n"
+                                        ,idx
+                                        ,inet_ntop( AF_INET, &client.sin_addr, remote, INET_ADDRSTRLEN )
+                                        ,ntohs( client.sin_port )
+                                        ,work_fd );
 
-                            fd_set.insert( work_fd );
+                            fd_set->insert( work_fd );
                             int ret = ep_add( efd, work_fd );
                             if ( ret != 0 )
                             {
-                                printf("work_fd(%d) ep_add error set size : %lu\n", idx, fd_set.size() );
+                                printf("work_fd(%d) ep_add error set size : %lu\n", idx, fd_set->size() );
                                 perror( "work_fd ep_add" );
                                 return (void*)-1;
                             }
@@ -334,30 +349,29 @@ static void* work_func( void* no )
                 {
                     // 连接发送消息到达
                     work_fd = evs[i].data.fd;
-
                     while( true )
                     {
-                        if( mq.end_pos == mq.size )
+                        if( mq->end_pos == mq->size )
                         {
                             // 消息绕回头部
-                            mq.end_pos = 0;
+                            mq->end_pos = 0;
                         }
 
-                        printf( "end_pos:%d\n", mq.end_pos );
+                        printf( "end_pos:%d\n", mq->end_pos );
 
-                        msg_len = recv( work_fd, mq.data+mq.end_pos, mq.size-mq.end_pos, MSG_DONTWAIT );
+                        msg_len = recv( work_fd, mq->data + mq->end_pos, mq->size - mq->end_pos, MSG_DONTWAIT );
 
                         if( msg_len > 0 )
                         {
                             // 消息穿仓
-                            if( ( mq.end_pos < mq.begin_pos && mq.end_pos + msg_len > mq.begin_pos ) ||
-                                ( 0 == mq.begin_pos && mq.end_pos + msg_len == mq.size )
+                            if( ( mq->end_pos < mq->begin_pos && mq->end_pos + msg_len > mq->begin_pos ) ||
+                                ( 0 == mq->begin_pos && mq->end_pos + msg_len == mq->size )
                                 )
                             {
                                 printf( "no.%d circle msg queue overload!!!\n", idx );
                             }
 
-                            mq.end_pos += msg_len;
+                            mq->end_pos += msg_len;
 
                         }
                         else if ( msg_len == -1 )
@@ -371,14 +385,14 @@ static void* work_func( void* no )
                         }
                         else if ( msg_len == 0 )
                         {
-                            fd_set.erase( work_fd );
+                            fd_set->erase( work_fd );
                             ep_del( efd, work_fd );
                             printf("offline\n");
                             break;
                         }
                     }
 
-                    printf( "msg:%s\n", mq.data );
+                    printf( "no.%d msg:%s\n", idx, mq->data );
                 }
             }
         }
@@ -389,28 +403,51 @@ static void* work_func( void* no )
         // 消息队列分发给所有连接
         if( ct - lt > dt )
         {
-            // 本线程分发
-            if( mq.begin_pos != mq.end_pos && wrp != mq.end_pos )
-            {
-                for( auto it=fd_set.begin(); it!=fd_set.end(); it++ )
-                {
-                    if( wrp < mq.end_pos )
-                    {
-                        send( *it, mq.data+wrp, mq.end_pos-wrp, 0);
-                    }
-                    else
-                    {
-                        send( *it, mq.data+wrp, mq.size-wrp, MSG_MORE );
-                        send( *it, mq.data, mq.end_pos, 0);
-                    }
-                }
+            
+            // 读取所有线程的数据往本线程连接发送
 
-                wrp = mq.end_pos;
+            for (int t = 0; t < thread_num; ++t)
+            {
+                mq = mqs+t;
+                wrp = work_read_infos[idx][t];
+                // printf("aaa t:%d mq: %d %d %d\n",t, mq->begin_pos, wrp, mq->end_pos);
+                if( mq->begin_pos != mq->end_pos && wrp != mq->end_pos )
+                {
+                    for( auto it=fd_set->begin(); it!=fd_set->end(); ++it )
+                    {
+                        if( wrp < mq->end_pos )
+                        {
+                            send( *it, mq->data+wrp, mq->end_pos-wrp, 0);
+                        }
+                        else
+                        {
+                            send( *it, mq->data+wrp, mq->size-wrp, MSG_MORE );
+                            send( *it, mq->data, mq->end_pos, 0);
+                        }
+                    }
+
+                    work_read_infos[idx][t] = mq->end_pos;
+
+                }
 
             }
 
+
+
+
+
+
+
+
+
+
+
             // 检测消息是否已经被读取完成
             // mq.begin_pos = mrpxx;
+            // for (int i = 0; i < thread_num; ++i)
+            // {
+            //     work_read_infos
+            // }
             
             gettimeofday( &tv, nullptr );
             ct = tv.tv_sec*1000000 + tv.tv_usec;

@@ -346,12 +346,12 @@ static void* work_func( void* no )
                         work_fd = accept( sock, (struct sockaddr*)&client, &clen );
                         if ( work_fd > 0 )
                         {
-                            char remote[INET_ADDRSTRLEN];
-                            printf( "no.%d client connected : %s:%d fd(%d)\n"
-                                        ,idx
-                                        ,inet_ntop( AF_INET, &client.sin_addr, remote, INET_ADDRSTRLEN )
-                                        ,ntohs( client.sin_port )
-                                        ,work_fd );
+                            // char remote[INET_ADDRSTRLEN];
+                            // printf( "no.%d client connected : %s:%d fd(%d)\n"
+                            //             ,idx
+                            //             ,inet_ntop( AF_INET, &client.sin_addr, remote, INET_ADDRSTRLEN )
+                            //             ,ntohs( client.sin_port )
+                            //             ,work_fd );
 
                             fd_set->insert( work_fd );
                             int ret = ep_add( efd, work_fd );

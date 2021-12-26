@@ -357,8 +357,6 @@ static void* work_func( void* no )
                             mq->end_pos = 0;
                         }
 
-                        printf( "end_pos:%d\n", mq->end_pos );
-
                         msg_len = recv( work_fd, mq->data + mq->end_pos, mq->size - mq->end_pos, MSG_DONTWAIT );
 
                         if( msg_len > 0 )
@@ -403,51 +401,80 @@ static void* work_func( void* no )
         // 消息队列分发给所有连接
         if( ct - lt > dt )
         {
-            
             // 读取所有线程的数据往本线程连接发送
-
             for (int t = 0; t < thread_num; ++t)
             {
                 mq = mqs+t;
                 wrp = work_read_infos[idx][t];
-                // printf("aaa t:%d mq: %d %d %d\n",t, mq->begin_pos, wrp, mq->end_pos);
+
                 if( mq->begin_pos != mq->end_pos && wrp != mq->end_pos )
                 {
                     for( auto it=fd_set->begin(); it!=fd_set->end(); ++it )
                     {
                         if( wrp < mq->end_pos )
                         {
-                            send( *it, mq->data+wrp, mq->end_pos-wrp, 0);
+                            send( *it, mq->data+wrp, mq->end_pos-wrp, MSG_DONTWAIT);
                         }
                         else
                         {
                             send( *it, mq->data+wrp, mq->size-wrp, MSG_MORE );
-                            send( *it, mq->data, mq->end_pos, 0);
+                            send( *it, mq->data, mq->end_pos, MSG_DONTWAIT);
                         }
                     }
-
                     work_read_infos[idx][t] = mq->end_pos;
-
                 }
 
+                // 调整这个线程的数据读取进度
+                if( wrp != work_read_infos[idx][t] )
+                {
+                    if(mq->begin_pos < mq->end_pos)
+                    {// 正常顺序时
+                        wrp = work_read_infos[0][t];
+                        for (int i = 1; i < thread_num; ++i)
+                        {
+                            if( wrp > work_read_infos[i][t] )
+                            {
+                                wrp = work_read_infos[i][t];
+                            }
+                        }
+                        mq->begin_pos = wrp;
+                    }
+                    else
+                    {// 绕回顺序时
+                        int rs=0,ls=server_cfg->work_buffer_size;
+                        for (int i = 1; i < thread_num; ++i)
+                        {
+                            if( work_read_infos[i][t] >= mq->begin_pos )
+                            {//right
+                                if( rs == 0 )
+                                {
+                                    rs = work_read_infos[i][t];
+                                }
+                                else
+                                {
+                                    if( rs > work_read_infos[i][t] )
+                                    {
+                                        rs = work_read_infos[i][t];
+                                    }
+                                }
+                            }
+                            else
+                            {//left
+                                if( ls > work_read_infos[i][t] )
+                                {
+                                    ls = work_read_infos[i][t];
+                                }
+                            }
+                        }
+
+                        mq->begin_pos = ( rs>0 ? rs : ls );
+
+                    }
+
+                    // printf("no.%d tttt:%d s:%d my:%d\n",idx,t, mq->begin_pos,work_read_infos[idx][t] );
+                }
             }
 
-
-
-
-
-
-
-
-
-
-
-            // 检测消息是否已经被读取完成
-            // mq.begin_pos = mrpxx;
-            // for (int i = 0; i < thread_num; ++i)
-            // {
-            //     work_read_infos
-            // }
             
             gettimeofday( &tv, nullptr );
             ct = tv.tv_sec*1000000 + tv.tv_usec;

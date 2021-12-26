@@ -304,8 +304,27 @@ static void* work_func( void* no )
     socklen_t clen = sizeof( client );
 
     struct epoll_event evs[ MAX_EVENT_NUMBER ];
-    int work_num,work_fd,evn,msg_len,wrp;;
+    int work_num,work_fd,evn,msg_len,wrp,iov_idx;
     
+    struct iovec *iov = new (std::nothrow) struct iovec[ thread_num*2 ];
+    if ( iov == nullptr )
+    {
+        printf( "new memory error iov[%d]\n", thread_num*2 );
+        return (void*)-1;
+    }
+    int iovsz = sizeof(struct iovec) * thread_num * 2;
+
+    struct msghdr msg;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = thread_num*2;
+    msg.msg_name = nullptr;
+    msg.msg_namelen = 0;
+    msg.msg_control = nullptr;
+    msg.msg_controllen = 0;
+
+    const int rdssz = 256;
+    unsigned char rds[rdssz]={0};
+
     uint64_t dt = 6000000;
     uint64_t lt=0,ct=0;
     struct timeval tv;
@@ -401,6 +420,13 @@ static void* work_func( void* no )
         // 消息队列分发给所有连接
         if( ct - lt > dt )
         {
+
+            bzero( iov, iovsz );
+            bzero( rds, rdssz );
+
+            iov_idx = 0;
+
+
             // 读取所有线程的数据往本线程连接发送
             for (int t = 0; t < thread_num; ++t)
             {
@@ -409,23 +435,38 @@ static void* work_func( void* no )
 
                 if( mq->begin_pos != mq->end_pos && wrp != mq->end_pos )
                 {
-                    for( auto it=fd_set->begin(); it!=fd_set->end(); ++it )
+                    rds[t] = 1;
+                    if( wrp < mq->end_pos )
                     {
-                        if( wrp < mq->end_pos )
-                        {
-                            send( *it, mq->data+wrp, mq->end_pos-wrp, MSG_DONTWAIT);
-                        }
-                        else
-                        {
-                            send( *it, mq->data+wrp, mq->size-wrp, MSG_MORE );
-                            send( *it, mq->data, mq->end_pos, MSG_DONTWAIT);
-                        }
+                        iov[ iov_idx ].iov_base = mq->data + wrp;
+                        iov[ iov_idx ].iov_len = mq->end_pos - wrp;
+                        ++iov_idx;
+                    }
+                    else
+                    {
+                        iov[ iov_idx ].iov_base = mq->data + wrp;
+                        iov[ iov_idx ].iov_len = mq->size - wrp;
+                        ++iov_idx;
+
+                        iov[ iov_idx ].iov_base = mq->data;
+                        iov[ iov_idx ].iov_len = mq->end_pos;
+                        ++iov_idx;
                     }
                     work_read_infos[idx][t] = mq->end_pos;
                 }
+            }
 
+            msg.msg_iovlen = iov_idx;
+            for( auto it=fd_set->begin(); it!=fd_set->end(); ++it )
+            {
+                sendmsg( *it, &msg, MSG_DONTWAIT);
+            }
+
+            for (int t = 0; t < thread_num; ++t)
+            {
+                mq = mqs+t;
                 // 调整这个线程的数据读取进度
-                if( wrp != work_read_infos[idx][t] )
+                if( rds[t] )
                 {
                     if(mq->begin_pos < mq->end_pos)
                     {// 正常顺序时
@@ -466,22 +507,20 @@ static void* work_func( void* no )
                                 }
                             }
                         }
-
                         mq->begin_pos = ( rs>0 ? rs : ls );
-
                     }
 
                     // printf("no.%d tttt:%d s:%d my:%d\n",idx,t, mq->begin_pos,work_read_infos[idx][t] );
                 }
             }
-
             
             gettimeofday( &tv, nullptr );
             ct = tv.tv_sec*1000000 + tv.tv_usec;
             lt = ct;
         }
-
     }
+
+    delete [] iov;
 
     printf( "thread over %d\n", idx );
     return (void*)0;

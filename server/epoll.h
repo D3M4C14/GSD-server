@@ -55,12 +55,12 @@ static int ep_wait( int efd, struct epoll_event *e, int en, int t = -1 )
 	return n;
 }
 
-static void ep_nonblocking( int fd )
-{
-	int flag = fcntl( fd, F_GETFL, 0 );
-	if ( -1 == flag )return;
+// static void ep_nonblocking( int fd )
+// {
+// 	int flag = fcntl( fd, F_GETFL, 0 );
+// 	if ( -1 == flag )return;
 
-	fcntl(fd, F_SETFL, flag | O_NONBLOCK);
-}
+// 	fcntl(fd, F_SETFL, flag | O_NONBLOCK);
+// }
 
 #endif

@@ -312,6 +312,8 @@ int listen_init( launch_cfg_t * const cfg )
         }
         sched_yield();
     }
+    
+    ep_del( efd, listen_sock );
 
     close( listen_sock );
     close( efd );

@@ -159,7 +159,7 @@ int work_init( launch_cfg_t * const cfg, pthread_t * pids, int * const sock, pth
     for (int i = 0; i < thread_num; ++i)
     {
         nos[i]=i;
-        printf( "create the %dth thread\n", i );
+        // printf( "create the %dth thread\n", i );
         ret = pthread_create( &thread_ids[i], nullptr, work_func, &nos[i] );
         if( ret != 0 )
         {
@@ -325,7 +325,7 @@ static void* work_func( void* no )
     const int rdssz = 256;
     unsigned char rds[rdssz]={0};
 
-    uint64_t dt = 6000000;
+    uint64_t dt = server_cfg->msg_delay;
     uint64_t lt=0,ct=0;
     struct timeval tv;
 
@@ -404,12 +404,12 @@ static void* work_func( void* no )
                         {
                             fd_set->erase( work_fd );
                             ep_del( efd, work_fd );
-                            printf("offline\n");
+                            // printf("offline\n");
                             break;
                         }
                     }
 
-                    printf( "no.%d msg:%s\n", idx, mq->data );
+                    // printf( "no.%d msg:%s\n", idx, mq->data );
                 }
             }
         }

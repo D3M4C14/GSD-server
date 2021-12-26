@@ -10,6 +10,7 @@
 #define DEFAULT_RECV_BUFFER_SIZE 1024
 #define DEFAULT_SEND_BUFFER_SIZE 1024
 #define DEFAULT_BACKLOG 64
+#define DEFAULT_MSG_DELAY 200000
 
 typedef struct 
 {
@@ -21,6 +22,7 @@ typedef struct
 	int recv_buffer_size;
 	int send_buffer_size;
 	int backlog;
+	int msg_delay;
 } launch_cfg_t;
 
 
